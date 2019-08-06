@@ -1,0 +1,125 @@
+import socket
+import threading
+from optparse import OptionParser
+import re
+import queue
+RED = '\033[1;31m' #红色
+GREE = '\033[1;32m'  #绿色
+YLLO = '\033[1;33m' #黄色
+que =queue.Queue()
+USAGE ='''
+Usage:  python pscan.py 8.8.8.8
+        python pscan.py 8.8.8.8 -p 21,80,8080
+        python pscan.py 8.8.8.8 -p 21,80,8080 -n 50
+'''
+
+class Scanner(object):
+    def __init__(self,target,port,threadnum = 100):
+        if re.match(r"^(?:(:25[0-5]|2[0-4][0-9]|[01]?[0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$",target):
+            self.target = target
+        else:
+            print(RED+"[*] IP Invalid !!")
+            exit()
+
+        self.port =port
+        self.threadnum=threadnum
+
+    def start(self):
+        if self.port ==65535:
+            for i in range(0,65536):
+                que.put(i)
+        else:
+            for i in self.port:
+                if int(i) < 0 or int(i) > 65535:
+                    print(RED + '\n[-] 端口错误！ 请指定0~65535之间的端口')
+                    exit()
+                que.put(i)
+
+        try:
+            print(YLLO+"[*] 正在扫描%s"%self.target)
+            thread_pool = []
+            for i in range(0,int(self.threadnum)):
+                th = threading.Thread(target=self.run,args=())
+                thread_pool.append(th)
+            for th in thread_pool:
+                th.setDaemon(True)
+                th.start()
+            que.join()
+            print(YLLO+"[*] 完成扫描！ ！")
+
+        except Exception as e:
+            print("error",e)
+        except KeyboardInterrupt:
+            print(RED+"[*] 用户自行退出扫描！")
+    
+    def run(self):
+        while not que.empty():
+            port = int(que.get())
+            if self.portScan(port):
+                banner = self.getSocketBanner(port)
+                if banner:
+                    print(GREE+"[*]%d------open\t"%(port))
+                else:
+                    print(GREE+"[*]%d-------open\t"%(port))
+            que.task_done()
+    def portScan(self,port):
+        try:
+            sk = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+            sk.settimeout(0.5)
+            if sk.connect_ex((self.target,port)) == 0:
+                return True
+            else:
+                return False
+        except Exception as e:
+            print("portscan:error",e)
+            pass
+        except KeyboardInterrupt:
+            print(RED+"[*] 用户自行退出扫描")
+            exit()
+        finally:
+            sk.close()
+
+    def getSocketBanner(self,port):
+        try:
+            sk= socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+            sk.settimeout(0.5)
+            sk.connect((self.target,port))
+            sk.send("Hello\r\n".encode("utf-8"))
+            return sk.recv(2048).decode("utf-8") 
+        except Exception as e:
+            pass
+        finally:
+            sk.close()
+
+
+
+
+parser = OptionParser()
+
+parser.add_option('-p','--port',action="store",type="str",dest="port",help="ALL ports to be scanned default ALL port")
+parser.add_option('-n','--num',action="store",type="int",dest="threadnum",help="Thread num default 100")
+(option , args) = parser.parse_args()
+
+if option.port == None and option.threadnum == None and len(args) == 1:
+    scanner = Scanner(args[0],65535)
+    scanner.start()
+elif option.port != None and option.threadnum == None and len(args) == 1:
+    port = option.port.split(',')
+    scanner = Scanner(args[0],port)
+    scanner.start()
+elif option.port ==  None and option.threadnum != None and len(args) ==1:
+    scanner = Scanner(args[0],65535,option.threadnum)
+    scanner.start()
+elif option.port ==  None and option.threadnum != None and len(args) ==1:
+    port = option.port.split(',')
+    scanner = Scanner(args[0],port,option.threadnum)
+    scanner.start()
+else:
+    print(GREE+USAGE+GREE)
+    parser.print_help()
+
+
+
+            
+
+
